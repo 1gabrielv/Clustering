@@ -1,0 +1,9 @@
+{
+    "code-runner.executorMap": {
+        "python": "cmd /c \"\"${workspaceFolder}\\run_with_venv.bat\" \"$fullFileName\"\""
+    },
+    "code-runner.runInTerminal": true,
+    "code-runner.preserveFocus": false,
+    "code-runner.clearPreviousOutput": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe"
+}

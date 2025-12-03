@@ -169,7 +169,7 @@ def separar_manual_movimento(df, threshold_variacao=1.0):
     magnitude = calcular_magnitude(df)
     
     # Calcular variação em janelas móveis
-    window_size = 300  # ~50 amostras por janela
+    window_size = 50 # ~50 amostras por janela
     variacao = magnitude.rolling(window=window_size, center=True).std()
     
     # Classificar baseado no threshold
