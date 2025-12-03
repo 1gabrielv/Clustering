@@ -1,0 +1,9 @@
+Períodos de sono - Pessoa 36
+==================================================
+Período 1: 15:50 até 17:20
+Período 2: 19:10 até 20:10
+Período 3: 23:30 até 00:30
+Período 4: 00:50 até 02:15
+Período 5: 05:15 até 06:20
+Período 6: 07:15 até 09:50
+Período 7: 12:00 até 13:10

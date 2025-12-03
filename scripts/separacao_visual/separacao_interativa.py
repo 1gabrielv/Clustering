@@ -98,21 +98,54 @@ def obter_periodos_sono(df_accel):
         print(f"\n--- Período de Sono #{periodo_num} ---")
         
         # Obter hora de início do sono
-        inicio_str = input("  Hora de INÍCIO do sono (HH:MM) ou ENTER para finalizar: ").strip()
+        inicio_str = input("  Hora de INÍCIO do sono (HH:MM ou HHMM) ou ENTER para finalizar: ").strip()
         if not inicio_str:
             break
         
         # Obter hora de fim do sono
-        fim_str = input("  Hora de FIM do sono (HH:MM): ").strip()
+        fim_str = input("  Hora de FIM do sono (HH:MM or HHMM): ").strip()
         if not fim_str:
             print("  [AVISO] Período incompleto. Ignorando...")
             continue
-        
+
+        def _normalize_time_input(s: str) -> str:
+            """Normaliza entradas de tempo.
+
+            Aceita formatos 'HH:MM' ou 'HHMM' (também 'HMM' será padronizado para '0H:MM').
+            Retorna string no formato 'HH:MM' ou levanta ValueError.
+            """
+            s = str(s).strip()
+            if not s:
+                raise ValueError('Entrada vazia')
+
+            # Se já contém ':', validar e padronizar
+            if ':' in s:
+                parts = s.split(':')
+                if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+                    raise ValueError('Formato com dois campos separados por ":" inválido')
+                h = parts[0].zfill(2)
+                m = parts[1].zfill(2)
+                return f"{h}:{m}"
+
+            # Caso sem ':', extrair apenas dígitos
+            digits = ''.join(ch for ch in s if ch.isdigit())
+            if len(digits) == 4:
+                return digits[:2] + ':' + digits[2:]
+            if len(digits) == 3:
+                digits = digits.zfill(4)
+                return digits[:2] + ':' + digits[2:]
+
+            raise ValueError('Formato inválido. Use HH:MM ou HHMM (ex.: 23:15 ou 2315)')
+
         try:
             # Converter para datetime usando a data do dataset
             data_base = inicio_dados.date()
-            inicio_sono = pd.to_datetime(f"{data_base} {inicio_str}")
-            fim_sono = pd.to_datetime(f"{data_base} {fim_str}")
+
+            inicio_norm = _normalize_time_input(inicio_str)
+            fim_norm = _normalize_time_input(fim_str)
+
+            inicio_sono = pd.to_datetime(f"{data_base} {inicio_norm}", format="%Y-%m-%d %H:%M")
+            fim_sono = pd.to_datetime(f"{data_base} {fim_norm}", format="%Y-%m-%d %H:%M")
             
             # Se fim < início, assumir que é no dia seguinte
             if fim_sono <= inicio_sono:
@@ -122,10 +155,10 @@ def obter_periodos_sono(df_accel):
             periodos_sono.append((inicio_sono, fim_sono))
             print(f"  [OK] Período adicionado: {inicio_sono.strftime('%H:%M')} até {fim_sono.strftime('%H:%M')}")
             periodo_num += 1
-            
+
         except Exception as e:
             print(f"  [ERRO] Formato inválido: {e}")
-            print("  Use o formato HH:MM (exemplo: 22:30)")
+            print("  Use o formato HH:MM (ex: 22:30) ou HHMM (ex: 2230).")
     
     return periodos_sono
 
@@ -160,20 +193,28 @@ def separar_dados(df_accel, df_gyro, periodos_sono):
     return accel_dormindo, accel_acordado, gyro_dormindo, gyro_acordado
 
 def salvar_dados_separados(pessoa_id, accel_dormindo, accel_acordado, gyro_dormindo, gyro_acordado, periodos_sono):
-    """Salva dados separados em arquivos CSV"""
-    output_dir = OUTPUT_BASE / f"pessoa_{pessoa_id}"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    """Salva dados separados em estrutura organizada de pastas"""
+    pessoa_dir = OUTPUT_BASE / f"pessoa_{pessoa_id}"
     
-    # Salvar acelerômetro
-    accel_dormindo.to_csv(output_dir / "acelerometro_DORMINDO.csv", index=False)
-    accel_acordado.to_csv(output_dir / "acelerometro_ACORDADO.csv", index=False)
+    # Criar estrutura de pastas (padrão: dados<ID>)
+    dados_dir = pessoa_dir / f"dados{pessoa_id}"
+    acordado_dir = dados_dir / "acordado"
+    dormindo_dir = dados_dir / "dormindo"
+    periodos_dir = pessoa_dir / "periodos_sono"
     
-    # Salvar giroscópio
-    gyro_dormindo.to_csv(output_dir / "giroscopio_DORMINDO.csv", index=False)
-    gyro_acordado.to_csv(output_dir / "giroscopio_ACORDADO.csv", index=False)
+    for dir_path in [acordado_dir, dormindo_dir, periodos_dir]:
+        dir_path.mkdir(parents=True, exist_ok=True)
     
-    # Salvar períodos de sono para uso posterior
-    with open(output_dir / "periodos_sono.txt", 'w', encoding='utf-8') as f:
+    # Salvar dados ACORDADO (com sufixo _acordado)
+    accel_acordado.to_csv(acordado_dir / f"acelerometro{pessoa_id}_acordado.csv", index=False)
+    gyro_acordado.to_csv(acordado_dir / f"giroscopio{pessoa_id}_acordado.csv", index=False)
+    
+    # Salvar dados DORMINDO (com sufixo _dormindo)
+    accel_dormindo.to_csv(dormindo_dir / f"acelerometro{pessoa_id}_dormindo.csv", index=False)
+    gyro_dormindo.to_csv(dormindo_dir / f"giroscopio{pessoa_id}_dormindo.csv", index=False)
+    
+    # Salvar períodos de sono (arquivo com ID)
+    with open(periodos_dir / f"periodos_sono{pessoa_id}.txt", 'w', encoding='utf-8') as f:
         f.write(f"Períodos de sono - Pessoa {pessoa_id}\n")
         f.write("="*50 + "\n")
         for i, (inicio, fim) in enumerate(periodos_sono, 1):
@@ -182,14 +223,15 @@ def salvar_dados_separados(pessoa_id, accel_dormindo, accel_acordado, gyro_dormi
     print("\n" + "="*80)
     print("ARQUIVOS SALVOS:")
     print("="*80)
-    print(f"  Pasta: {output_dir}")
-    print(f"\n  Acelerômetro:")
-    print(f"    - acelerometro_DORMINDO.csv ({len(accel_dormindo)} amostras)")
-    print(f"    - acelerometro_ACORDADO.csv ({len(accel_acordado)} amostras)")
-    print(f"\n  Giroscópio:")
-    print(f"    - giroscopio_DORMINDO.csv ({len(gyro_dormindo)} amostras)")
-    print(f"    - giroscopio_ACORDADO.csv ({len(gyro_acordado)} amostras)")
-    print(f"\n  Períodos de sono salvos em: periodos_sono.txt")
+    print(f"  Pasta raiz: {pessoa_dir}")
+    print(f"\n  {dados_dir.name}/acordado/:")
+    print(f"    - acelerometro{pessoa_id}_acordado.csv ({len(accel_acordado)} amostras)")
+    print(f"    - giroscopio{pessoa_id}_acordado.csv ({len(gyro_acordado)} amostras)")
+    print(f"\n  {dados_dir.name}/dormindo/:")
+    print(f"    - acelerometro{pessoa_id}_dormindo.csv ({len(accel_dormindo)} amostras)")
+    print(f"    - giroscopio{pessoa_id}_dormindo.csv ({len(gyro_dormindo)} amostras)")
+    print(f"\n  periodos_sono/:")
+    print(f"    - periodos_sono{pessoa_id}.txt")
 
 
 def gerar_visualizacao_final(df_accel, df_gyro, periodos_sono, pessoa_id):

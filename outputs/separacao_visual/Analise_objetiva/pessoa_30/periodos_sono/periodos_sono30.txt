@@ -1,0 +1,10 @@
+Períodos de sono - Pessoa 30
+==================================================
+Período 1: 15:25 até 16:00
+Período 2: 17:00 até 17:50
+Período 3: 18:35 até 19:30
+Período 4: 20:00 até 20:55
+Período 5: 06:45 até 07:30
+Período 6: 08:10 até 09:00
+Período 7: 21:05 até 23:00
+Período 8: 23:15 até 23:50
