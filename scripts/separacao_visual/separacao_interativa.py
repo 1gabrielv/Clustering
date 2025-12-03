@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import importlib.util
 
 # Configurações
@@ -20,10 +20,19 @@ def carregar_dados_pessoa(pessoa_id):
     gyro_file = DATA_DIR / "giroscopio" / f"giroscopio_{pessoa_id}.csv"
     
     df_accel = pd.read_csv(accel_file)
+    # Normalizar timestamp -> remover timezone e garantir ordenação
     df_accel['timestamp'] = pd.to_datetime(df_accel['timestamp'])
+    df_accel['timestamp'] = df_accel['timestamp'].apply(
+        lambda x: x.replace(tzinfo=None) if getattr(x, 'tzinfo', None) is not None else x
+    )
+    df_accel.sort_values('timestamp', inplace=True)
     
     df_gyro = pd.read_csv(gyro_file)
     df_gyro['timestamp'] = pd.to_datetime(df_gyro['timestamp'])
+    df_gyro['timestamp'] = df_gyro['timestamp'].apply(
+        lambda x: x.replace(tzinfo=None) if getattr(x, 'tzinfo', None) is not None else x
+    )
+    df_gyro.sort_values('timestamp', inplace=True)
     
     return df_accel, df_gyro
 
@@ -168,15 +177,36 @@ def separar_dados(df_accel, df_gyro, periodos_sono):
     df_accel['estado'] = 'ACORDADO'
     df_gyro['estado'] = 'ACORDADO'
     
-    # Marcar períodos de sono
-    for inicio, fim in periodos_sono:
-        # Acelerômetro
-        mask_accel = (df_accel['timestamp'] >= inicio) & (df_accel['timestamp'] <= fim)
-        df_accel.loc[mask_accel, 'estado'] = 'DORMINDO'
-        
-        # Giroscópio
-        mask_gyro = (df_gyro['timestamp'] >= inicio) & (df_gyro['timestamp'] <= fim)
-        df_gyro.loc[mask_gyro, 'estado'] = 'DORMINDO'
+    # Marcar períodos de sono. Se o dataset cobre múltiplos dias, repetir os períodos
+    # definidos (apenas horas) para cada dia presente nos dados.
+    data_min = df_accel['timestamp'].dt.floor('D').min()
+    data_max = df_accel['timestamp'].dt.floor('D').max()
+    n_days = (data_max - data_min).days
+
+    for i, (inicio, fim) in enumerate(periodos_sono, start=1):
+        # Se o período especificado tem data (apenas foi criado com a data inicial),
+        # iremos replicá-lo por cada dia do dataset para marcar todas as noites.
+        total_acc = 0
+        total_gyro = 0
+        for offset in range(n_days + 1):
+            inicio_shift = inicio + timedelta(days=offset)
+            fim_shift = fim + timedelta(days=offset)
+
+            mask_accel = (df_accel['timestamp'] >= inicio_shift) & (df_accel['timestamp'] <= fim_shift)
+            n_acc = int(mask_accel.sum())
+            df_accel.loc[mask_accel, 'estado'] = 'DORMINDO'
+
+            mask_gyro = (df_gyro['timestamp'] >= inicio_shift) & (df_gyro['timestamp'] <= fim_shift)
+            n_gyro = int(mask_gyro.sum())
+            df_gyro.loc[mask_gyro, 'estado'] = 'DORMINDO'
+
+            if n_acc or n_gyro:
+                print(f"  [DEBUG] Período {i} (dia +{offset}): {inicio_shift.strftime('%Y-%m-%d %H:%M')} até {fim_shift.strftime('%Y-%m-%d %H:%M')} -> acelerômetro: {n_acc} amostras, giroscópio: {n_gyro} amostras")
+
+            total_acc += n_acc
+            total_gyro += n_gyro
+
+        print(f"  [DEBUG] Período {i} resumo: total_acelerometro={total_acc}, total_giroscopio={total_gyro}")
     
     # Criar DataFrames separados
     accel_dormindo = df_accel[df_accel['estado'] == 'DORMINDO'].copy()
@@ -184,6 +214,8 @@ def separar_dados(df_accel, df_gyro, periodos_sono):
     
     gyro_dormindo = df_gyro[df_gyro['estado'] == 'DORMINDO'].copy()
     gyro_acordado = df_gyro[df_gyro['estado'] == 'ACORDADO'].copy()
+
+    print(f"\n[DEBUG] Totais marcados: acelerômetro DORMINDO={len(accel_dormindo)}, Giroscópio DORMINDO={len(gyro_dormindo)}")
     
     # Remover coluna auxiliar
     for df in [accel_dormindo, accel_acordado, gyro_dormindo, gyro_acordado]:
